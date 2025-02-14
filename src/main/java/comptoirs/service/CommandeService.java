@@ -2,7 +2,9 @@ package comptoirs.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
+import comptoirs.entity.Produit;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -88,8 +90,41 @@ public class CommandeService {
      */
     @Transactional
     public Ligne ajouterLigne(int commandeNum, int produitRef, @Positive int quantite) {
+
+        // Le produit doit exister et ne pas être indisponible
+        Produit produit = produitDao.findById(produitRef).orElseThrow();
+        boolean disponible = produit.isIndisponible();
+
+        if(!disponible)
+        {
+            // La commande doit exister et ne pas avoir été déjà envoyée
+            Commande commande = commandeDao.findById(commandeNum).orElseThrow();
+
+            if(commande.getEnvoyeele() == null)
+            {
+                int unitesEnStockProduit = produit.getUnitesEnStock();
+
+                // Suffisamment de produits doivent être disponible avant de les acheter
+                if(unitesEnStockProduit >= quantite)
+                {
+                    // On enregistre la nouvelle ligne
+                    var nouvelleLigne = new Ligne(commande, produit, quantite);
+                    ligneDao.save(nouvelleLigne);
+
+                    int unitesCommandeesTotal = produit.getUnitesCommandees() + quantite;
+                    produit.setUnitesCommandees(unitesCommandeesTotal);
+                    produitDao.save(produit);
+
+                    return nouvelleLigne;
+                }
+                else throw new IllegalStateException("Il n'y a pas assez de stock disponible pour le produit choisi");
+            }
+            else throw new IllegalStateException("La commande a déjà été envoyée");
+        }
+        else throw new IllegalArgumentException("Le produit doit être disponible");
+
         // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+        // throw new UnsupportedOperationException("Pas encore implémenté");
     }
 
     /**
@@ -108,7 +143,31 @@ public class CommandeService {
      */
     @Transactional
     public Commande enregistreExpedition(int commandeNum) {
+
+        // La commande doit exister
+        Commande commande = commandeDao.findById(commandeNum).orElseThrow();
+
+        // La commande ne doit pas déjà avoir été envoyée
+        if(commande.getEnvoyeele() == null)
+        {
+            commande.setEnvoyeele(LocalDate.now());
+
+            List<Ligne> allLignesFromCommande = commande.getLignes();
+
+            for(Ligne ligne : allLignesFromCommande)
+            {
+                int nbProduitsCommandes = ligne.getQuantite();
+                Produit produit = ligne.getProduit();
+
+                produit.setUnitesEnStock(produit.getUnitesEnStock() - nbProduitsCommandes);
+                produit.setUnitesCommandees(produit.getUnitesCommandees() - nbProduitsCommandes);
+            }
+        }
+        else throw new IllegalStateException("La commande a déjà été envoyée");
+
+        return commande;
+
         // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+        // throw new UnsupportedOperationException("Pas encore implémenté");
     }
 }
